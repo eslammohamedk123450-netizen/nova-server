@@ -23,13 +23,20 @@ Example request:
 ```bash
 curl -X POST "https://YOUR-DOMAIN/tts" \
   -H "Content-Type: application/json" \
-  -d '{"text":"أهلاً، أنا سولي. عامل إيه؟","persona":"soly"}' \
+  -d '{"text":"أهلاً، أنا سولي. عامل إيه؟","persona":"soly","style":"natural"}' \
   --output soly.mp3
 ```
 
 Allowed personas:
-- `soly` → `ar-EG-ShakirNeural`
-- `soleen` → `ar-EG-SalmaNeural`
+- `soly` → `ar-EG-ShakirNeural` (Egyptian male voice)
+- `soleen` → `ar-EG-SalmaNeural` (Egyptian female voice)
+
+Optional `style` presets (default: `natural`):
+- `natural` — balanced conversational delivery (`-4%` rate)
+- `calm` — slightly slower delivery (`-8%` rate)
+- `lively` — normal rate with a slight pitch lift
+
+The presets adjust rate and pitch only; they do not change the underlying voice identity or rewrite the supplied dialect/text.
 
 Optional protection:
 - Set Railway variable `NOVA_VOICE_API_KEY` to a long random secret.
