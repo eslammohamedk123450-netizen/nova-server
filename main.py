@@ -9,12 +9,13 @@ from time import monotonic
 from typing import Literal
 
 import edge_tts
+from egyptian_pronunciation import prepare_egyptian_speech_text
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
 MAX_TEXT_LENGTH = 1500
 TTS_TIMEOUT_SECONDS = 45
 MAX_CONCURRENT_SYNTHESIS = 3
@@ -158,6 +159,8 @@ async def test_page() -> str:
   <select id="style"><option value="natural">طبيعي ومتوازن (مقترح)</option><option value="calm">هادي ورايق</option><option value="lively">حيوي ونشيط</option></select>
   <label for="text">النص</label>
   <textarea id="text">أهلاً بيك! عامل إيه النهارده؟ أنا سولي، موجود معاك. تحب نبدأ بإيه؟</textarea>
+  <p style="margin:8px 0 4px">النص الذي سيُرسل لمحرك الصوت بعد ضبط النطق:</p>
+  <pre id="speechPreview" style="white-space:pre-wrap;background:#080b14;border:1px solid #46506a;border-radius:10px;padding:12px;line-height:1.9;color:#d4af37">سيظهر هنا بعد التوليد.</pre>
   <label for="key">مفتاح الاختبار (اتركه فارغاً إذا لم تضبط مفتاحاً على Railway)</label>
   <input id="key" type="password" autocomplete="off" placeholder="NOVA_VOICE_API_KEY">
   <button id="speak">ولّد الصوت واسمعه</button>
@@ -188,6 +191,11 @@ document.getElementById("speak").addEventListener("click", async () => {
       const result = await response.json().catch(() => ({}));
       throw new Error(result.detail || "فشل توليد الصوت: " + response.status);
     }
+    const previewResponse = await fetch("/preview", {method:"POST", headers, body:JSON.stringify({text:document.getElementById("text").value, persona:document.getElementById("persona").value, style:document.getElementById("style").value})});
+    if (previewResponse.ok) {
+      const preview = await previewResponse.json();
+      document.getElementById("speechPreview").textContent = preview.speech_text;
+    }
     const blob = await response.blob();
     if (previousUrl) URL.revokeObjectURL(previousUrl);
     previousUrl = URL.createObjectURL(blob);
@@ -201,6 +209,18 @@ document.getElementById("speak").addEventListener("click", async () => {
   }
 });
 </script></body></html>"""
+
+
+@app.post("/preview")
+async def preview_speech_text(payload: SpeechRequest) -> dict[str, str]:
+    """Show the exact TTS-only text while preserving the app display text."""
+    original = payload.text.strip()
+    if not original:
+        raise HTTPException(status_code=422, detail="Text cannot be blank")
+    return {
+        "display_text": original,
+        "speech_text": prepare_egyptian_speech_text(original),
+    }
 
 
 @app.post("/tts")
@@ -218,11 +238,12 @@ async def text_to_speech(
     client_ip = request.client.host if request.client else "unknown"
     enforce_rate_limit(client_ip)
     voice = VOICES[payload.persona]
+    speech_text = prepare_egyptian_speech_text(text)
 
     try:
         async with synthesis_semaphore:
             audio = await asyncio.wait_for(
-                synthesize_mp3(text, voice, payload.style),
+                synthesize_mp3(speech_text, voice, payload.style),
                 timeout=TTS_TIMEOUT_SECONDS,
             )
     except asyncio.TimeoutError:
