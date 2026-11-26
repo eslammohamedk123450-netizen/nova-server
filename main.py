@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import os
+import re
 from collections import defaultdict, deque
 from time import monotonic
 from typing import Literal
@@ -13,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.0"
 MAX_TEXT_LENGTH = 1500
 TTS_TIMEOUT_SECONDS = 45
 MAX_CONCURRENT_SYNTHESIS = 3
@@ -23,6 +24,13 @@ RATE_LIMIT_WINDOW_SECONDS = 60
 VOICES = {
     "soly": "ar-EG-ShakirNeural",
     "soleen": "ar-EG-SalmaNeural",
+}
+
+# Conservative presets: the voice identity stays fixed; only prosody changes.
+PROSODY = {
+    "natural": {"rate": "-4%", "pitch": "+0Hz"},
+    "calm": {"rate": "-8%", "pitch": "-1Hz"},
+    "lively": {"rate": "+0%", "pitch": "+1Hz"},
 }
 
 app = FastAPI(
@@ -56,6 +64,7 @@ request_times: dict[str, deque[float]] = defaultdict(deque)
 class SpeechRequest(BaseModel):
     text: str = Field(min_length=1, max_length=MAX_TEXT_LENGTH)
     persona: Literal["soly", "soleen"] = "soly"
+    style: Literal["natural", "calm", "lively"] = "natural"
 
 
 def verify_optional_api_key(provided_key: str | None) -> None:
@@ -84,8 +93,14 @@ def enforce_rate_limit(client_ip: str) -> None:
                 request_times.pop(ip, None)
 
 
-async def synthesize_mp3(text: str, voice: str) -> bytes:
-    communicator = edge_tts.Communicate(text=text, voice=voice)
+async def synthesize_mp3(text: str, voice: str, style: str) -> bytes:
+    prosody = PROSODY[style]
+    communicator = edge_tts.Communicate(
+        text=text,
+        voice=voice,
+        rate=prosody["rate"],
+        pitch=prosody["pitch"],
+    )
     audio_parts: list[bytes] = []
     async for chunk in communicator.stream():
         if chunk.get("type") == "audio":
@@ -104,6 +119,8 @@ async def root() -> dict[str, str]:
         "version": APP_VERSION,
         "health": "/health",
         "speech_endpoint": "POST /tts",
+    "voices": "Fixed Egyptian male/female neural voices",
+    "styles": "natural, calm, lively",
     }
 
 
@@ -137,8 +154,10 @@ async def test_page() -> str:
   <p>اكتب جملة قصيرة واختار سولي أو سولين. أول طلب بعد فترة خمول ممكن يتأخر.</p>
   <label for="persona">الشخصية</label>
   <select id="persona"><option value="soly">سولي · صوت مصري رجالي</option><option value="soleen">سولين · صوت مصري نسائي</option></select>
+  <label for="style">طريقة الإلقاء</label>
+  <select id="style"><option value="natural">طبيعي ومتوازن (مقترح)</option><option value="calm">هادي ورايق</option><option value="lively">حيوي ونشيط</option></select>
   <label for="text">النص</label>
-  <textarea id="text">أهلاً، أنا سولي. عامل إيه النهارده؟</textarea>
+  <textarea id="text">أهلاً بيك! عامل إيه النهارده؟ أنا سولي، موجود معاك. تحب نبدأ بإيه؟</textarea>
   <label for="key">مفتاح الاختبار (اتركه فارغاً إذا لم تضبط مفتاحاً على Railway)</label>
   <input id="key" type="password" autocomplete="off" placeholder="NOVA_VOICE_API_KEY">
   <button id="speak">ولّد الصوت واسمعه</button>
@@ -161,7 +180,8 @@ document.getElementById("speak").addEventListener("click", async () => {
       method:"POST", headers,
       body:JSON.stringify({
         text:document.getElementById("text").value,
-        persona:document.getElementById("persona").value
+        persona:document.getElementById("persona").value,
+        style:document.getElementById("style").value
       })
     });
     if (!response.ok) {
@@ -202,7 +222,7 @@ async def text_to_speech(
     try:
         async with synthesis_semaphore:
             audio = await asyncio.wait_for(
-                synthesize_mp3(text, voice),
+                synthesize_mp3(text, voice, payload.style),
                 timeout=TTS_TIMEOUT_SECONDS,
             )
     except asyncio.TimeoutError:
@@ -223,5 +243,6 @@ async def text_to_speech(
             "Cache-Control": "no-store",
             "Content-Disposition": 'inline; filename="nova-speech.mp3"',
             "X-NOVA-Voice": voice,
+            "X-NOVA-Style": payload.style,
         },
     )
