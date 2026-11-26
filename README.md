@@ -49,3 +49,22 @@ Optional protection:
 - Only the two configured Egyptian voices are accepted.
 - CORS is restricted to the NOVA GitHub Pages origin by default.
 - This is a prototype relay, not a guaranteed unlimited or always-on TTS API.
+
+
+## Egyptian Arabic pronunciation preparation (v0.3.0)
+
+The service now keeps the original text unchanged for the NOVA interface and
+prepares a separate TTS-only version using a conservative Egyptian Arabic
+pronunciation dictionary. Common words such as "النهارده", "دلوقتي", "إزاي",
+"كده", and the persona name "سولي" receive selective tashkeel to guide the
+Arabic neural voice.
+
+- `POST /preview`: returns `display_text` and the exact `speech_text` sent
+  to the voice engine.
+- `POST /tts`: synthesizes the prepared `speech_text`; the visible app text
+  is not modified.
+- `GET /test`: shows the prepared speech text before generating audio.
+
+This is a first-pass pronunciation lexicon, not a full Arabic grammatical
+diacritizer. Unknown words are left unchanged to avoid introducing incorrect
+vowel marks. Add new entries only after listening to actual test results.
