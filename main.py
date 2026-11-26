@@ -179,6 +179,11 @@ document.getElementById("speak").addEventListener("click", async () => {
     const headers = {"Content-Type":"application/json"};
     const key = document.getElementById("key").value.trim();
     if (key) headers["X-API-Key"] = key;
+    const previewResponse = await fetch("/preview", {method:"POST", headers, body:JSON.stringify({text:document.getElementById("text").value, persona:document.getElementById("persona").value, style:document.getElementById("style").value})});
+    if (previewResponse.ok) {
+      const preview = await previewResponse.json();
+      document.getElementById("speechPreview").textContent = preview.speech_text;
+    }
     const response = await fetch("/tts", {
       method:"POST", headers,
       body:JSON.stringify({
@@ -190,11 +195,6 @@ document.getElementById("speak").addEventListener("click", async () => {
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
       throw new Error(result.detail || "فشل توليد الصوت: " + response.status);
-    }
-    const previewResponse = await fetch("/preview", {method:"POST", headers, body:JSON.stringify({text:document.getElementById("text").value, persona:document.getElementById("persona").value, style:document.getElementById("style").value})});
-    if (previewResponse.ok) {
-      const preview = await previewResponse.json();
-      document.getElementById("speechPreview").textContent = preview.speech_text;
     }
     const blob = await response.blob();
     if (previousUrl) URL.revokeObjectURL(previousUrl);
